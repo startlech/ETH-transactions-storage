@@ -13,6 +13,7 @@ import psycopg2
 import time
 import sys
 import logging
+from tqdm import tqdm
 #from systemd.journal import JournalHandler
 
 # Get env variables or set to default
@@ -62,7 +63,7 @@ logger.addHandler(lfh)
 
 try:
     logger.info("Trying to connect to "+ dbname)
-    conn = psycopg2.connect(dbname)
+    conn = psycopg2.connect(dbname=dbname, user="rva", password="")
     conn.autocommit = True
     logger.info("Connected to the database")
 except:
@@ -86,12 +87,13 @@ while web3.eth.syncing != False:
 logger.info("Ethereum node is synced!")
 
 # Adds all transactions from Ethereum block
-def insertion(blockid, tr):
-    time = web3.eth.getBlock(blockid)['timestamp']
-    for x in range(0, tr):
-        trans = web3.eth.getTransactionByBlock(blockid, x)
+def insertion(block):
+    time = block['timestamp']
+    for trans in block['transactions']:
+        
         # Save also transaction status, should be null if pre byzantium blocks
-        status = bool(web3.eth.get_transaction_receipt(trans['hash']).status)
+        #receipt =  web3.eth.get_transaction_receipt(trans['hash'])
+        status = True #bool(receipt.status)
         txhash = trans['hash'].hex()
         value = trans['value']
         inputinfo = trans['input']
@@ -101,7 +103,7 @@ def insertion(blockid, tr):
         fr = trans['from']
         to = trans['to']
         gasprice = trans['gasPrice']
-        gas = web3.eth.getTransactionReceipt(trans['hash'])['gasUsed']
+        gas =  trans['gas'] #receipt['gasUsed']
         contract_to = ''
         contract_value = ''
         # Check if transaction is a contract transfer
@@ -116,12 +118,12 @@ def insertion(blockid, tr):
             contract_value = ''
         cur.execute(
             'INSERT INTO public.ethtxs(time, txfrom, txto, value, gas, gasprice, block, txhash, contract_to, contract_value, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
-            (time, fr, to, value, gas, gasprice, blockid, txhash, contract_to, contract_value, status))
+            (time, fr, to, value, gas, gasprice, trans['blockNumber'], txhash, contract_to, contract_value, status))
 
 # Fetch all of new (not in index) Ethereum blocks and add transactions to index
 while True:
     try:
-        conn = psycopg2.connect(dbname)
+        conn = psycopg2.connect(dbname=dbname, user="rva", password="")
         conn.autocommit = True
     except:
         logger.error("Unable to connect to database")
@@ -138,12 +140,10 @@ while True:
 
     logger.info('Current best block in index: ' + str(maxblockindb) + '; in Ethereum chain: ' + str(endblock))
 
-    for block in range(maxblockindb + 1, endblock):
-        transactions = web3.eth.getBlockTransactionCount(block)
-        if transactions > 0:
-            insertion(block, transactions)
-        else:
-            logger.debug('Block ' + str(block) + ' does not contain transactions')
+    for blockNo in tqdm(range(maxblockindb + 1, endblock)):
+        block = web3.eth.get_block(blockNo, True)
+        insertion(block)
+    
     cur.close()
     conn.close()
     time.sleep(int(pollingPeriod))
