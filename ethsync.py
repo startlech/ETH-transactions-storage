@@ -89,36 +89,13 @@ logger.info("Ethereum node is synced!")
 # Adds all transactions from Ethereum block
 def insertion(block):
     time = block['timestamp']
-    for trans in block['transactions']:
-        
-        # Save also transaction status, should be null if pre byzantium blocks
-        #receipt =  web3.eth.get_transaction_receipt(trans['hash'])
-        status = True #bool(receipt.status)
+    for trans in block['transactions']:       
         txhash = trans['hash'].hex()
-        value = trans['value']
-        inputinfo = trans['input']
-        # Check if transaction is a contract transfer
-        if (value == 0 and not inputinfo.startswith('0xa9059cbb')):
-            continue
         fr = trans['from']
         to = trans['to']
-        gasprice = trans['gasPrice']
-        gas =  trans['gas'] #receipt['gasUsed']
-        contract_to = ''
-        contract_value = ''
-        # Check if transaction is a contract transfer
-        if inputinfo.startswith('0xa9059cbb'):
-            contract_to = inputinfo[10:-64]
-            contract_value = inputinfo[74:]
-        # Correct contract transfer transaction represents '0x' + 4 bytes 'a9059cbb' + 32 bytes (64 chars) for contract address and 32 bytes for its value
-        # Some buggy txs can break up Indexer, so we'll filter it
-        if len(contract_to) > 128:
-            logger.info('Skipping ' + str(txhash) + ' tx. Incorrect contract_to length: ' + str(len(contract_to)))
-            contract_to = ''
-            contract_value = ''
         cur.execute(
-            'INSERT INTO public.ethtxs(time, txfrom, txto, value, gas, gasprice, block, txhash, contract_to, contract_value, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
-            (time, fr, to, value, gas, gasprice, trans['blockNumber'], txhash, contract_to, contract_value, status))
+            'INSERT INTO public.ethtxs(time, txfrom, txto, block, txhash) VALUES (%s, %s, %s, %s, %s)',
+            (time, fr, to, trans['blockNumber'], txhash))
 
 # Fetch all of new (not in index) Ethereum blocks and add transactions to index
 while True:
